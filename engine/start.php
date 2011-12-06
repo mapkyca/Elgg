@@ -86,6 +86,15 @@ if (!include_once(dirname(__FILE__) . "/settings.php")) {
 	throw new InstallationException($msg);
 }
 
+/**
+ * Per domain config lifted from BCT (marcus@marcus-povey.com:20111206)
+ */
+if ((isset($CONFIG->per_domain_config)) && ($CONFIG->per_domain_config))
+{
+    $settings_file = "/settings.{$_SERVER['SERVER_NAME']}.php";
+    if (file_exists(dirname(__FILE__) . $settings_file))
+	    $include[] = $settings_file;
+}
 
 // load the rest of the library files from engine/lib/
 $lib_files = array(
