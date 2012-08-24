@@ -62,7 +62,7 @@ function elgg_get_plugin_ids_in_dir($dir = null) {
 		$dir = elgg_get_plugins_path();
 	}
 
-	$plugin_idss = array();
+	$plugin_ids = array();
 	$handle = opendir($dir);
 
 	if ($handle) {
@@ -93,10 +93,13 @@ function elgg_get_plugin_ids_in_dir($dir = null) {
 function elgg_generate_plugin_entities() {
 	$site = get_config('site');
 	$dir = elgg_get_plugins_path();
+	$db_prefix = elgg_get_config('dbprefix');
 
 	$options = array(
 		'type' => 'object',
 		'subtype' => 'plugin',
+		'selects' => array('plugin_oe.*'),
+		'joins' => array("JOIN {$db_prefix}objects_entity plugin_oe on plugin_oe.guid = e.guid"),
 		'limit' => ELGG_ENTITIES_NO_VALUE
 	);
 
@@ -298,20 +301,18 @@ function elgg_load_plugins() {
 
 	// temporary disable all plugins if there is a file called 'disabled' in the plugin dir
 	if (file_exists("$plugins_path/disabled")) {
+		if (elgg_is_admin_logged_in() && elgg_in_context('admin')) {
+			system_message(elgg_echo('plugins:disabled'));
+		}
 		return false;
 	}
 
-	// Load view caches if available
-	$cached_view_paths = elgg_filepath_cache_load('views');
-	$cached_view_types = elgg_filepath_cache_load('view_types');
-	$cached_view_info = is_string($cached_view_paths) && is_string($cached_view_types);
-
-	if ($cached_view_info) {
-		$CONFIG->views = unserialize($cached_view_paths);
-		$CONFIG->view_types = unserialize($cached_view_types);
-
-		// don't need to register views
+	if (elgg_get_config('system_cache_loaded')) {
 		$start_flags = $start_flags & ~ELGG_PLUGIN_REGISTER_VIEWS;
+	}
+
+	if (elgg_get_config('i18n_loaded_from_cache')) {
+		$start_flags = $start_flags & ~ELGG_PLUGIN_REGISTER_LANGUAGES;
 	}
 
 	$return = true;
@@ -330,12 +331,6 @@ function elgg_load_plugins() {
 				continue;
 			}
 		}
-	}
-
-	// Cache results
-	if (!$cached_view_info) {
-		elgg_filepath_cache_save('views', serialize($CONFIG->views));
-		elgg_filepath_cache_save('view_types', serialize($CONFIG->view_types));
 	}
 
 	return $return;
@@ -364,7 +359,11 @@ function elgg_get_plugins($status = 'active', $site_guid = null) {
 		'type' => 'object',
 		'subtype' => 'plugin',
 		'limit' => ELGG_ENTITIES_NO_VALUE,
-		'joins' => array("JOIN {$db_prefix}private_settings ps on ps.entity_guid = e.guid"),
+		'selects' => array('plugin_oe.*'),
+		'joins' => array(
+			"JOIN {$db_prefix}private_settings ps on ps.entity_guid = e.guid",
+			"JOIN {$db_prefix}objects_entity plugin_oe on plugin_oe.guid = e.guid"
+			),
 		'wheres' => array("ps.name = '$priority'"),
 		'order_by' => "CAST(ps.value as unsigned), e.guid"
 	);
@@ -439,9 +438,9 @@ function elgg_set_plugin_priorities(array $order) {
 		}
 	}
 
-	// set the missing plugins priorities
+	// set the missing plugins' priorities
 	if ($return && $missing_plugins) {
-		if (!$priority) {
+		if (!isset($priority)) {
 			$priority = 0;
 		}
 		foreach ($missing_plugins as $plugin) {
@@ -480,9 +479,10 @@ function elgg_reindex_plugin_priorities() {
  */
 function elgg_namespace_plugin_private_setting($type, $name, $id = null) {
 	switch ($type) {
-//		case 'setting':
-//			$name = ELGG_PLUGIN_SETTING_PREFIX . $name;
-//			break;
+		// commented out because it breaks $plugin->$name access to variables
+		//case 'setting':
+		//	$name = ELGG_PLUGIN_SETTING_PREFIX . $name;
+		//	break;
 
 		case 'user_setting':
 			if (!$id) {
@@ -703,6 +703,14 @@ function elgg_get_plugin_dependency_strings($dep) {
 			$strings['comment'] = '';
 			break;
 
+		case 'php_version':
+			// 'PHP version'
+			$strings['name'] = elgg_echo('ElggPlugin:Dependencies:PhpVersion');
+			$strings['expected_value'] = "$comparison {$info['version']}";
+			$strings['local_value'] = $dep['value'];
+			$strings['comment'] = '';
+			break;
+		
 		case 'php_extension':
 			// PHP Extension %s [version]
 			$strings['name'] = elgg_echo('ElggPlugin:Dependencies:PhpExtension', array($info['name']));
@@ -1075,7 +1083,7 @@ function plugin_run_once() {
  */
 function plugins_test($hook, $type, $value, $params) {
 	global $CONFIG;
-	$value[] = $CONFIG->path . 'engine/tests/api/plugins.php';
+	$value[] = $CONFIG->path . 'engine/tests/ElggCorePluginsAPITest.php';
 	return $value;
 }
 

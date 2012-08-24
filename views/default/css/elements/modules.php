@@ -99,7 +99,6 @@
 	Widgets
 *************************************** */
 .elgg-widgets {
-	float: right;
 	min-height: 30px;
 }
 .elgg-widget-add-control {
@@ -139,7 +138,7 @@
 .elgg-module-widget {
 	background-color: #dedede;
 	padding: 2px;
-	margin: 0 5px 15px;
+	margin-bottom: 15px;
 	position: relative;
 }
 .elgg-module-widget:hover {
@@ -155,19 +154,10 @@
 	padding: 4px 45px 0 20px;
 	color: #666;
 }
-.elgg-module-widget.elgg-state-draggable > .elgg-head {
+.elgg-module-widget.elgg-state-draggable .elgg-widget-handle {
 	cursor: move;
 }
-.elgg-module-widget > .elgg-head a {
-	position: absolute;
-	top: 4px;
-	display: inline-block;
-	width: 18px;
-	height: 18px;
-	padding: 2px 2px 0 0;
-}
 a.elgg-widget-collapse-button {
-	left: 5px;
 	color: #c5c5c5;
 }
 a.elgg-widget-collapse-button:hover,
@@ -180,12 +170,6 @@ a.elgg-widget-collapse-button:before {
 }
 a.elgg-widget-collapsed:before {
 	content: "\25BA";
-}
-a.elgg-widget-delete-button {
-	right: 5px;
-}
-a.elgg-widget-edit-button {
-	right: 25px;
 }
 .elgg-module-widget > .elgg-body {
 	background-color: white;

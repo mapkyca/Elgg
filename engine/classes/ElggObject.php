@@ -14,6 +14,10 @@
  *
  * @package    Elgg.Core
  * @subpackage DataModel.Object
+ * 
+ * @property string $title       The title, name, or summary of this object
+ * @property string $description The body, description, or content of the object
+ * @property array  $tags        Array of tags that describe the object
  */
 class ElggObject extends ElggEntity {
 
@@ -37,12 +41,12 @@ class ElggObject extends ElggEntity {
 	 *
 	 * If no arguments are passed, create a new entity.
 	 *
-	 * If an argument is passed attempt to load a full Object entity.  Arguments
-	 * can be:
+	 * If an argument is passed, attempt to load a full ElggObject entity.
+	 * Arguments can be:
 	 *  - The GUID of an object entity.
-	 *  - A DB result object with a guid property
+	 *  - A DB result object from the entities table with a guid property
 	 *
-	 * @param mixed $guid If an int, load that GUID.  If a db row then will attempt to
+	 * @param mixed $guid If an int, load that GUID.  If a db row, then will attempt to
 	 * load the rest of the data.
 	 *
 	 * @throws IOException If passed an incorrect guid
@@ -55,15 +59,15 @@ class ElggObject extends ElggEntity {
 		$this->initialise_attributes(false);
 
 		if (!empty($guid)) {
-			// Is $guid is a DB row - either a entity row, or a object table row.
+			// Is $guid is a DB row from the entity table
 			if ($guid instanceof stdClass) {
 				// Load the rest
-				if (!$this->load($guid->guid)) {
+				if (!$this->load($guid)) {
 					$msg = elgg_echo('IOException:FailedToLoadGUID', array(get_class(), $guid->guid));
 					throw new IOException($msg);
 				}
 
-				// Is $guid is an ElggObject? Use a copy constructor
+			// Is $guid is an ElggObject? Use a copy constructor
 			} else if ($guid instanceof ElggObject) {
 				elgg_deprecated_notice('This type of usage of the ElggObject constructor was deprecated. Please use the clone method.', 1.7);
 
@@ -71,11 +75,11 @@ class ElggObject extends ElggEntity {
 					$this->attributes[$key] = $value;
 				}
 
-				// Is this is an ElggEntity but not an ElggObject = ERROR!
+			// Is this is an ElggEntity but not an ElggObject = ERROR!
 			} else if ($guid instanceof ElggEntity) {
 				throw new InvalidParameterException(elgg_echo('InvalidParameterException:NonElggObject'));
 
-				// We assume if we have got this far, $guid is an int
+			// Is it a GUID
 			} else if (is_numeric($guid)) {
 				if (!$this->load($guid)) {
 					throw new IOException(elgg_echo('IOException:FailedToLoadGUID', array(get_class(), $guid)));
@@ -89,15 +93,20 @@ class ElggObject extends ElggEntity {
 	/**
 	 * Loads the full ElggObject when given a guid.
 	 *
-	 * @param int $guid Guid of an ElggObject
+	 * @param mixed $guid GUID of an ElggObject or the stdClass object from entities table
 	 *
 	 * @return bool
 	 * @throws InvalidClassException
 	 */
 	protected function load($guid) {
-		// Test to see if we have the generic stuff
+		// Load data from entity table if needed
 		if (!parent::load($guid)) {
 			return false;
+		}
+
+		// Only work with GUID from here
+		if ($guid instanceof stdClass) {
+			$guid = $guid->guid;
 		}
 
 		// Check the type
@@ -110,7 +119,7 @@ class ElggObject extends ElggEntity {
 		$row = get_object_entity_as_row($guid);
 		if (($row) && (!$this->isFullyLoaded())) {
 			// If $row isn't a cached copy then increment the counter
-			$this->attributes['tables_loaded'] ++;
+			$this->attributes['tables_loaded']++;
 		}
 
 		// Now put these into the attributes array as core values
@@ -119,40 +128,63 @@ class ElggObject extends ElggEntity {
 			$this->attributes[$key] = $value;
 		}
 
+		// guid needs to be an int  http://trac.elgg.org/ticket/4111
+		$this->attributes['guid'] = (int)$this->attributes['guid'];
+
 		return true;
 	}
 
-	/**
-	 * Saves object-specific attributes.
-	 *
-	 * @internal Object attributes are saved in the objects_entity table.
-	 *
-	 * @return bool
-	 */
-	public function save() {
-		// Save ElggEntity attributes
-		if (!parent::save()) {
+	/** @override */
+	protected function create() {
+		global $CONFIG;
+
+		$guid = parent::create();
+		$title = sanitize_string($this->title);
+		$description = sanitize_string($this->description);
+		
+		$query = "INSERT into {$CONFIG->dbprefix}objects_entity
+			(guid, title, description) values ($guid, '$title', '$description')";
+
+		$result = insert_data($query);
+		if ($result === false) {
+			// TODO(evan): Throw an exception here?
 			return false;
 		}
-
-		// Save ElggObject-specific attributes
-		return create_object_entity($this->get('guid'), $this->get('title'),
-			$this->get('description'), $this->get('container_guid'));
+		
+		return $guid;
 	}
+
+	/** @override */
+	protected function update() {
+		global $CONFIG;
+
+		if (!parent::update()) {
+			return false;
+		}
+		
+		$guid = (int)$this->guid;
+		$title = sanitize_string($this->title);
+		$description = sanitize_string($this->description);
+
+		$query = "UPDATE {$CONFIG->dbprefix}objects_entity
+			set title='$title', description='$description' where guid=$guid";
+
+		return update_data($query) !== false;
+	}
+
 
 	/**
 	 * Return sites that this object is a member of
 	 *
-	 * Site membership is determined by relationships and not site_guid.d
+	 * Site membership is determined by relationships and not site_guid.
 	 *
 	 * @todo This should be moved to ElggEntity
-	 * @todo Unimplemented
 	 *
 	 * @param string $subtype Optionally, the subtype of result we want to limit to
 	 * @param int    $limit   The number of results to return
 	 * @param int    $offset  Any indexing offset
 	 *
-	 * @return array|false
+	 * @return array
 	 */
 	function getSites($subtype = "", $limit = 10, $offset = 0) {
 		return get_site_objects($this->getGUID(), $subtype, $limit, $offset);

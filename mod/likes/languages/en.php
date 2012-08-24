@@ -3,7 +3,7 @@
  * Likes English language file
  */
 
-$english = array(
+return array(
 	'likes:this' => 'liked this',
 	'likes:deleted' => 'Your like has been removed',
 	'likes:see' => 'See who liked this',
@@ -17,6 +17,7 @@ $english = array(
 	'likes:userlikedthis' => '%s like',
 	'likes:userslikedthis' => '%s likes',
 	'likes:river:annotate' => 'likes',
+	'likes:delete:confirm' => 'Are you sure you want to unlike this?',
 
 	'river:likes' => 'likes %s %s',
 
@@ -40,5 +41,3 @@ Thanks,
 ',
 	
 );
-
-add_translation('en', $english);

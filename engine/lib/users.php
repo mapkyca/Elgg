@@ -60,39 +60,10 @@ function create_user_entity($guid, $name, $username, $password, $salt, $email, $
 	$row = get_entity_as_row($guid);
 	if ($row) {
 		// Exists and you have access to it
-
 		$query = "SELECT guid from {$CONFIG->dbprefix}users_entity where guid = {$guid}";
 		if ($exists = get_data_row($query)) {
-			$query = "UPDATE {$CONFIG->dbprefix}users_entity
-				set name='$name', username='$username', password='$password', salt='$salt',
-				email='$email', language='$language', code='$code', last_action = "
-				. time() . " where guid = {$guid}";
-
-			$result = update_data($query);
-			if ($result != false) {
-				// Update succeeded, continue
-				$entity = get_entity($guid);
-				if (elgg_trigger_event('update', $entity->type, $entity)) {
-					return $guid;
-				} else {
-					$entity->delete();
-				}
-			}
 		} else {
-			// Update failed, attempt an insert.
-			$query = "INSERT into {$CONFIG->dbprefix}users_entity
-				(guid, name, username, password, salt, email, language, code)
-				values ($guid, '$name', '$username', '$password', '$salt', '$email', '$language', '$code')";
-
-			$result = insert_data($query);
-			if ($result !== false) {
-				$entity = get_entity($guid);
-				if (elgg_trigger_event('create', $entity->type, $entity)) {
-					return $guid;
-				} else {
-					$entity->delete(); //delete_entity($guid);
-				}
-			}
+			// Exists query failed, attempt an insert.
 		}
 	}
 
@@ -137,7 +108,6 @@ function ban_user($user_guid, $reason = "") {
 	global $CONFIG;
 
 	$user_guid = (int)$user_guid;
-	$reason = sanitise_string($reason);
 
 	$user = get_entity($user_guid);
 
@@ -299,13 +269,14 @@ function get_user_sites($user_guid, $limit = 10, $offset = 0) {
 	$offset = (int)$offset;
 
 	return elgg_get_entities_from_relationship(array(
+		'site_guids' => ELGG_ENTITIES_ANY_VALUE,
 		'relationship' => 'member_of_site',
 		'relationship_guid' => $user_guid,
 		'inverse_relationship' => FALSE,
 		'types' => 'site',
 		'limit' => $limit,
-		'offset' => $offset)
-	);
+		'offset' => $offset,
+	));
 }
 
 /**
@@ -497,20 +468,26 @@ $timelower = 0, $timeupper = 0) {
  * @param int    $timelower      The earliest time the entity can have been created. Default: all
  * @param int    $timeupper      The latest time the entity can have been created. Default: all
  *
- * @return string The list in a form suitable to display
+ * @return string
  */
 function list_user_friends_objects($user_guid, $subtype = "", $limit = 10, $full_view = true,
 $listtypetoggle = true, $pagination = true, $timelower = 0, $timeupper = 0) {
 
-	$offset = (int) get_input('offset');
-	$limit = (int) $limit;
-	$count = (int) count_user_friends_objects($user_guid, $subtype, $timelower, $timeupper);
+	$offset = (int)get_input('offset');
+	$limit = (int)$limit;
+	$count = (int)count_user_friends_objects($user_guid, $subtype, $timelower, $timeupper);
 
 	$entities = get_user_friends_objects($user_guid, $subtype, $limit, $offset,
 		$timelower, $timeupper);
 
-	return elgg_view_entity_list($entities, $count, $offset, $limit, $full_view,
-		$listtypetoggle, $pagination);
+	return elgg_view_entity_list($entities, array(
+		'count' => $count,
+		'offset' => $offset,
+		'limit' => $limit,
+		'full_view' => $full_view,
+		'list_type_toggle' => $listtypetoggle,
+		'pagination' => $pagination,
+	));
 }
 
 /**
@@ -565,6 +542,8 @@ function get_user_by_username($username) {
 	$entity = get_data_row($query, 'entity_row_to_elggstar');
 	if ($entity) {
 		$USERNAME_TO_GUID_MAP_CACHE[$username] = $entity->guid;
+	} else {
+		$entity = false;
 	}
 
 	return $entity;
@@ -604,11 +583,11 @@ function get_user_by_code($code) {
 }
 
 /**
- * Get an array of users from their email addresses
+ * Get an array of users from an email address
  *
  * @param string $email Email address.
  *
- * @return Array of users
+ * @return array
  */
 function get_user_by_email($email) {
 	global $CONFIG;
@@ -628,10 +607,10 @@ function get_user_by_email($email) {
  * A function that returns a maximum of $limit users who have done something within the last
  * $seconds seconds or the total count of active users.
  *
- * @param int $seconds Number of seconds (default 600 = 10min)
- * @param int $limit   Limit, default 10.
- * @param int $offset  Offset, default 0.
- * @param bool $count  Count, default false.
+ * @param int  $seconds Number of seconds (default 600 = 10min)
+ * @param int  $limit   Limit, default 10.
+ * @param int  $offset  Offset, default 0.
+ * @param bool $count   Count, default false.
  *
  * @return mixed
  */
@@ -802,6 +781,12 @@ function validate_username($username) {
 		$msg = elgg_echo('registration:usernametooshort', array($CONFIG->minusername));
 		throw new RegistrationException($msg);
 	}
+	
+	// username in the database has a limit of 128 characters
+	if (strlen($username) > 128) {
+		$msg = elgg_echo('registration:usernametoolong', array(128));
+		throw new RegistrationException($msg);
+	}
 
 	// Blacklist for bad characters (partially nicked from mediawiki)
 	$blacklist = '/[' .
@@ -950,6 +935,7 @@ $allow_multiple_emails = false, $friend_guid = 0, $invitecode = '') {
 	$user->password = generate_user_password($user, $password);
 	$user->owner_guid = 0; // Users aren't owned by anyone, even if they are admin created.
 	$user->container_guid = 0; // Users aren't contained by anyone, even if they are admin created.
+	$user->language = get_current_language();
 	$user->save();
 
 	// If $friend_guid has been set, make mutual friends
@@ -960,8 +946,8 @@ $allow_multiple_emails = false, $friend_guid = 0, $invitecode = '') {
 				$friend_user->addFriend($user->guid);
 
 				// @todo Should this be in addFriend?
-				add_to_river('friends/river/create', 'friend', $user->getGUID(), $friend_guid);
-				add_to_river('friends/river/create', 'friend', $friend_guid, $user->getGUID());
+				add_to_river('river/relationship/friend/create', 'friend', $user->getGUID(), $friend_guid);
+				add_to_river('river/relationship/friend/create', 'friend', $friend_guid, $user->getGUID());
 			}
 		}
 	}
@@ -1019,7 +1005,7 @@ function elgg_get_user_validation_status($user_guid) {
 		return;
 	}
 
-	if ($md->value) {
+	if ($md[0]->value) {
 		return true;
 	}
 
@@ -1221,19 +1207,25 @@ function elgg_user_hover_menu($hook, $type, $return, $params) {
 
 	if (elgg_is_logged_in()) {
 		if (elgg_get_logged_in_user_guid() != $user->guid) {
-			if ($user->isFriend()) {
-				$url = "action/friends/remove?friend={$user->guid}";
-				$text = elgg_echo('friend:remove');
-				$name = 'remove_friend';
-			} else {
-				$url = "action/friends/add?friend={$user->guid}";
-				$text = elgg_echo('friend:add');
-				$name = 'add_friend';
-			}
-			$url = elgg_add_action_tokens_to_url($url);
-			$item = new ElggMenuItem($name, $text, $url);
-			$item->setSection('action');
-			$return[] = $item;
+			$isFriend = $user->isFriend();
+			
+			// Always emit both to make it super easy to toggle with ajax
+			$return[] = ElggMenuItem::factory(array(
+				'name' => 'remove_friend',
+				'href' => elgg_add_action_tokens_to_url("action/friends/remove?friend={$user->guid}"),
+				'text' => elgg_echo('friend:remove'),
+				'section' => 'action',
+				'item_class' => $isFriend ? '' : 'hidden',
+			));
+			
+			$return[] = ElggMenuItem::factory(array(
+				'name' => 'add_friend',
+				'href' => elgg_add_action_tokens_to_url("action/friends/add?friend={$user->guid}"),
+				'text' => elgg_echo('friend:add'),
+				'section' => 'action',
+				'item_class' => $isFriend ? 'hidden' : '',
+			));
+			
 		} else {
 			$url = "profile/$user->username/edit";
 			$item = new ElggMenuItem('profile:edit', elgg_echo('profile:edit'), $url);
@@ -1279,6 +1271,11 @@ function elgg_user_hover_menu($hook, $type, $return, $params) {
 
 		$url = "profile/$user->username/edit";
 		$item = new ElggMenuItem('profile:edit', elgg_echo('profile:edit'), $url);
+		$item->setSection('admin');
+		$return[] = $item;
+
+		$url = "settings/user/$user->username";
+		$item = new ElggMenuItem('settings:edit', elgg_echo('settings:edit'), $url);
 		$item->setSection('admin');
 		$return[] = $item;
 	}
@@ -1463,14 +1460,16 @@ function users_pagesetup() {
 			'name' => 'edit_avatar',
 			'href' => "avatar/edit/{$owner->username}",
 			'text' => elgg_echo('avatar:edit'),
-			'contexts' => array('profile_edit'),
+			'section' => '1_profile',
+			'contexts' => array('settings'),
 		));
 
 		elgg_register_menu_item('page', array(
 			'name' => 'edit_profile',
 			'href' => "profile/{$owner->username}/edit",
 			'text' => elgg_echo('profile:edit'),
-			'contexts' => array('profile_edit'),
+			'section' => '1_profile',
+			'contexts' => array('settings'),
 		));
 	}
 
@@ -1478,7 +1477,7 @@ function users_pagesetup() {
 	if ($viewer) {
 		elgg_register_menu_item('topbar', array(
 			'name' => 'profile',
-			'href' =>  $viewer->getURL(),
+			'href' => $viewer->getURL(),
 			'text' => elgg_view('output/img', array(
 				'src' => $viewer->getIconURL('topbar'),
 				'alt' => $viewer->name,
@@ -1537,11 +1536,12 @@ function users_init() {
 	elgg_register_plugin_hook_handler('register', 'menu:user_hover', 'elgg_user_hover_menu');
 
 	elgg_register_action('register', '', 'public');
-	elgg_register_action('useradd', '', 'public');
+	elgg_register_action('useradd', '', 'admin');
 	elgg_register_action('friends/add');
 	elgg_register_action('friends/remove');
 	elgg_register_action('avatar/upload');
 	elgg_register_action('avatar/crop');
+	elgg_register_action('avatar/remove');
 	elgg_register_action('profile/edit');
 
 	elgg_register_action('friends/collections/add');
@@ -1554,13 +1554,6 @@ function users_init() {
 	elgg_register_action('user/requestnewpassword', '', 'public');
 
 	elgg_register_widget_type('friends', elgg_echo('friends'), elgg_echo('friends:widget:description'));
-
-	// extend the account settings form
-	elgg_extend_view('forms/account/settings', 'core/settings/account/name', 100);
-	elgg_extend_view('forms/account/settings', 'core/settings/account/password', 100);
-	elgg_extend_view('forms/account/settings', 'core/settings/account/email', 100);
-	elgg_extend_view('forms/account/settings', 'core/settings/account/language', 100);
-	elgg_extend_view('forms/account/settings', 'core/settings/account/default_access', 100);
 
 	// Register the user type
 	elgg_register_entity_type('user', '');
@@ -1583,7 +1576,7 @@ function users_init() {
  */
 function users_test($hook, $type, $value, $params) {
 	global $CONFIG;
-	$value[] = "{$CONFIG->path}engine/tests/objects/users.php";
+	$value[] = "{$CONFIG->path}engine/tests/ElggCoreUserTest.php";
 	return $value;
 }
 

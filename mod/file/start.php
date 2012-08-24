@@ -122,6 +122,7 @@ function file_page_handler($page) {
 			include "$file_dir/friends.php";
 			break;
 		case 'view':
+		case 'read': // Elgg 1.7 compatibility
 			set_input('guid', $page[1]);
 			include "$file_dir/view.php";
 			break;
@@ -199,9 +200,13 @@ function file_notify_message($hook, $entity_type, $returnvalue, $params) {
 	if (($entity instanceof ElggEntity) && ($entity->getSubtype() == 'file')) {
 		$descr = $entity->description;
 		$title = $entity->title;
-		$url = elgg_get_site_url() . "view/" . $entity->guid;
 		$owner = $entity->getOwnerEntity();
-		return $owner->name . ' ' . elgg_echo("file:via") . ': ' . $entity->title . "\n\n" . $descr . "\n\n" . $entity->getURL();
+		return elgg_echo('file:notification', array(
+			$owner->name,
+			$title,
+			$descr,
+			$entity->getURL()
+		));
 	}
 	return null;
 }
@@ -233,36 +238,38 @@ function file_owner_block_menu($hook, $type, $return, $params) {
  */
 function file_get_simple_type($mimetype) {
 
+	$simple_type = null;
+
 	switch ($mimetype) {
 		case "application/msword":
-			return "document";
+		case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+			$simple_type = "document";
 			break;
 		case "application/pdf":
-			return "document";
+			$simple_type = "document";
+			break;
+		case "application/ogg":
+			$simple_type = "audio";
+			break;
+		default:
+			if (substr_count($mimetype, 'text/')) {
+				$simple_type = "document";
+			} elseif (substr_count($mimetype, 'audio/')) {
+				$simple_type = "audio";
+			} elseif (substr_count($mimetype, 'image/')) {
+				$simple_type = "image";
+			} elseif (substr_count($mimetype, 'video/')) {
+				$simple_type = "video";
+			} elseif (substr_count($mimetype, 'opendocument')) {
+				$simple_type = "document";
+			} else {
+				$simple_type = "general";
+			}
 			break;
 	}
 
-	if (substr_count($mimetype, 'text/')) {
-		return "document";
-	}
-
-	if (substr_count($mimetype, 'audio/')) {
-		return "audio";
-	}
-
-	if (substr_count($mimetype, 'image/')) {
-		return "image";
-	}
-
-	if (substr_count($mimetype, 'video/')) {
-		return "video";
-	}
-
-	if (substr_count($mimetype, 'opendocument')) {
-		return "document";
-	}
-
-	return "general";
+	$params = array('mime_type' => $mimetype);
+	return elgg_trigger_plugin_hook('simple_type', 'file', $params, $simple_type);
 }
 
 // deprecated and will be removed
@@ -345,17 +352,22 @@ function file_icon_url_override($hook, $type, $returnvalue, $params) {
 
 		// thumbnails get first priority
 		if ($file->thumbnail) {
-			return "mod/file/thumbnail.php?file_guid=$file->guid&size=$size";
+			$ts = (int)$file->icontime;
+			return "mod/file/thumbnail.php?file_guid=$file->guid&size=$size&icontime=$ts";
 		}
 
 		$mapping = array(
 			'application/excel' => 'excel',
 			'application/msword' => 'word',
+			'application/ogg' => 'music',
 			'application/pdf' => 'pdf',
 			'application/powerpoint' => 'ppt',
 			'application/vnd.ms-excel' => 'excel',
 			'application/vnd.ms-powerpoint' => 'ppt',
 			'application/vnd.oasis.opendocument.text' => 'openoffice',
+			'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'word',
+			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'excel',
+			'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'ppt',
 			'application/x-gzip' => 'archive',
 			'application/x-rar-compressed' => 'archive',
 			'application/x-stuffit' => 'archive',

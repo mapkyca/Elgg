@@ -40,65 +40,6 @@ function get_site_entity_as_row($guid) {
 	return get_data_row("SELECT * from {$CONFIG->dbprefix}sites_entity where guid=$guid");
 }
 
-/**
- * Create or update the entities table for a given site.
- * Call create_entity first.
- *
- * @param int    $guid        Site GUID
- * @param string $name        Site name
- * @param string $description Site Description
- * @param string $url         URL of the site
- *
- * @return bool
- */
-function create_site_entity($guid, $name, $description, $url) {
-	global $CONFIG;
-
-	$guid = (int)$guid;
-	$name = sanitise_string($name);
-	$description = sanitise_string($description);
-	$url = sanitise_string($url);
-
-	$row = get_entity_as_row($guid);
-
-	if ($row) {
-		// Exists and you have access to it
-		$query = "SELECT guid from {$CONFIG->dbprefix}sites_entity where guid = {$guid}";
-		if ($exists = get_data_row($query)) {
-			$query = "UPDATE {$CONFIG->dbprefix}sites_entity
-				set name='$name', description='$description', url='$url' where guid=$guid";
-			$result = update_data($query);
-
-			if ($result != false) {
-				// Update succeeded, continue
-				$entity = get_entity($guid);
-				if (elgg_trigger_event('update', $entity->type, $entity)) {
-					return $guid;
-				} else {
-					$entity->delete();
-					//delete_entity($guid);
-				}
-			}
-		} else {
-			// Update failed, attempt an insert.
-			$query = "INSERT into {$CONFIG->dbprefix}sites_entity
-				(guid, name, description, url) values ($guid, '$name', '$description', '$url')";
-			$result = insert_data($query);
-
-			if ($result !== false) {
-				$entity = get_entity($guid);
-				if (elgg_trigger_event('create', $entity->type, $entity)) {
-					return $guid;
-				} else {
-					$entity->delete();
-					//delete_entity($guid);
-				}
-			}
-		}
-	}
-
-	return false;
-}
 
 /**
  * Add a user to a site.
@@ -231,43 +172,6 @@ function get_site_domain($guid) {
 }
 
 /**
- * Initialise site handling
- *
- * Called at the beginning of system running, to set the ID of the current site.
- * This is 0 by default, but plugins may alter this behaviour by attaching functions
- * to the sites init event and changing $CONFIG->site_id.
- *
- * @uses $CONFIG
- *
- * @param string $event       Event API required parameter
- * @param string $object_type Event API required parameter
- * @param null   $object      Event API required parameter
- *
- * @return true
- * @access private
- */
-function sites_boot($event, $object_type, $object) {
-	global $CONFIG;
-
-	$site = elgg_trigger_plugin_hook("siteid", "system");
-	if ($site === null || $site === false) {
-		$CONFIG->site_id = (int) datalist_get('default_site');
-	} else {
-		$CONFIG->site_id = $site;
-	}
-	$CONFIG->site_guid = $CONFIG->site_id;
-	$CONFIG->site = get_entity($CONFIG->site_guid);
-
-	return true;
-}
-
-// Register event handlers
-elgg_register_event_handler('boot', 'system', 'sites_boot', 2);
-
-// Register with unit test
-elgg_register_plugin_hook_handler('unit_test', 'system', 'sites_test');
-
-/**
  * Unit tests for sites
  *
  * @param sting  $hook   unit_test
@@ -280,6 +184,9 @@ elgg_register_plugin_hook_handler('unit_test', 'system', 'sites_test');
  */
 function sites_test($hook, $type, $value, $params) {
 	global $CONFIG;
-	$value[] = "{$CONFIG->path}engine/tests/objects/sites.php";
+	$value[] = "{$CONFIG->path}engine/tests/ElggCoreSiteTest.php";
 	return $value;
 }
+
+// Register with unit test
+elgg_register_plugin_hook_handler('unit_test', 'system', 'sites_test');

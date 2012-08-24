@@ -53,32 +53,40 @@ if (!$request || !$simplecache_enabled) {
 
 // testing showed regex to be marginally faster than array / string functions over 100000 reps
 // it won't make a difference in real life and regex is easier to read.
-// <type>/<viewtype>/<name/of/view.and.dots>.<ts>.<type>
-$regex = '|([^/]+)/([^/]+)/(.+)\.([^\.]+)\.([^.]+)$|';
-preg_match($regex, $request, $matches);
+// <type>/<ts>/<viewtype>/<name/of/view.and.dots>.<type>
+$regex = '|([^/]+)/([0-9]+)/([^/]+)/(.+)\.([^/.]+)$|';
+if (!preg_match($regex, $request, $matches)) {
+	echo 'Cache error: bad request';
+	exit;
+}
 
 $type = $matches[1];
-$viewtype = $matches[2];
-$view = $matches[3];
+$ts = $matches[2];
+$viewtype = $matches[3];
+$view = $matches[4];
+
+// If is the same ETag, content didn't changed.
+$etag = $ts;
+if (isset($_SERVER['HTTP_IF_NONE_MATCH']) && trim($_SERVER['HTTP_IF_NONE_MATCH']) == $etag) {
+	header("HTTP/1.1 304 Not Modified");
+	exit;
+}
 
 switch ($type) {
 	case 'css':
 		header("Content-type: text/css", true);
-		header('Expires: ' . date('r', strtotime("+6 months")), true);
-		header("Pragma: public", true);
-		header("Cache-Control: public", true);
-
 		$view = "css/$view";
 		break;
 	case 'js':
 		header('Content-type: text/javascript', true);
-		header('Expires: ' . date('r', strtotime("+6 months")), true);
-		header("Pragma: public", true);
-		header("Cache-Control: public", true);
-
 		$view = "js/$view";
 		break;
 }
+
+header('Expires: ' . date('r', strtotime("+6 months")), true);
+header("Pragma: public", true);
+header("Cache-Control: public", true);
+header("ETag: $etag");
 
 $filename = $dataroot . 'views_simplecache/' . md5($viewtype . $view);
 

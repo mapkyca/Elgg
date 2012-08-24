@@ -44,12 +44,18 @@ $posted = 0, $annotation_id = 0) {
 	if ($access_id === "") {
 		$access_id = $object->access_id;
 	}
-	$annotation_id = (int)$annotation_id;
 	$type = $object->getType();
 	$subtype = $object->getSubtype();
-	$action_type = sanitise_string($action_type);
 
-	$params = array(
+	$view = sanitise_string($view);
+	$action_type = sanitise_string($action_type);
+	$subject_guid = sanitise_int($subject_guid);
+	$object_guid = sanitise_int($object_guid);
+	$access_id = sanitise_int($access_id);
+	$posted = sanitise_int($posted);
+	$annotation_id = sanitise_int($annotation_id);
+
+	$values = array(
 		'type' => $type,
 		'subtype' => $subtype,
 		'action_type' => $action_type,
@@ -62,13 +68,13 @@ $posted = 0, $annotation_id = 0) {
 	);
 
 	// return false to stop insert
-	$params = elgg_trigger_plugin_hook('creating', 'river', null, $params);
-	if ($params == false) {
+	$values = elgg_trigger_plugin_hook('creating', 'river', null, $values);
+	if ($values == false) {
 		// inserting did not fail - it was just prevented
 		return true;
 	}
 
-	extract($params);
+	extract($values);
 
 	// Attempt to save river item; return success status
 	$id = insert_data("insert into {$CONFIG->dbprefix}river " .
@@ -102,7 +108,7 @@ $posted = 0, $annotation_id = 0) {
  *
  * @warning not checking access (should we?)
  *
- * @param array $options
+ * @param array $options Parameters:
  *   ids                  => INT|ARR River item id(s)
  *   subject_guids        => INT|ARR Subject guid(s)
  *   object_guids         => INT|ARR Object guid(s)
@@ -207,7 +213,9 @@ function elgg_delete_river(array $options = array()) {
 /**
  * Get river items
  *
- * @param array $options
+ * @note If using types and subtypes in a query, they are joined with an AND.
+ *
+ * @param array $options Parameters:
  *   ids                  => INT|ARR River item id(s)
  *   subject_guids        => INT|ARR Subject guid(s)
  *   object_guids         => INT|ARR Object guid(s)
@@ -430,7 +438,6 @@ function elgg_river_get_access_sql() {
  *
  * @internal This is a simplified version of elgg_get_entity_type_subtype_where_sql()
  * which could be used for all queries once the subtypes have been denormalized.
- * FYI: It allows types and subtypes to not be paired.
  *
  * @param string     $table    'rv'
  * @param NULL|array $types    Array of types or NULL if none.
@@ -447,7 +454,8 @@ function elgg_get_river_type_subtype_where_sql($table, $types, $subtypes, $pairs
 		return '';
 	}
 
-	$wheres = array();
+	$types_wheres = array();
+	$subtypes_wheres = array();
 
 	// if no pairs, use types and subtypes
 	if (!is_array($pairs)) {
@@ -457,7 +465,7 @@ function elgg_get_river_type_subtype_where_sql($table, $types, $subtypes, $pairs
 			}
 			foreach ($types as $type) {
 				$type = sanitise_string($type);
-				$wheres[] = "({$table}.type = '$type')";
+				$types_wheres[] = "({$table}.type = '$type')";
 			}
 		}
 
@@ -467,13 +475,20 @@ function elgg_get_river_type_subtype_where_sql($table, $types, $subtypes, $pairs
 			}
 			foreach ($subtypes as $subtype) {
 				$subtype = sanitise_string($subtype);
-				$wheres[] = "({$table}.subtype = '$subtype')";
+				$subtypes_wheres[] = "({$table}.subtype = '$subtype')";
 			}
 		}
 
-		if (is_array($wheres) && count($wheres)) {
-			$wheres = array(implode(' OR ', $wheres));
+		if (is_array($types_wheres) && count($types_wheres)) {
+			$types_wheres = array(implode(' OR ', $types_wheres));
 		}
+
+		if (is_array($subtypes_wheres) && count($subtypes_wheres)) {
+			$subtypes_wheres = array('(' . implode(' OR ', $subtypes_wheres) . ')');
+		}
+
+		$wheres = array(implode(' AND ', array_merge($types_wheres, $subtypes_wheres)));
+
 	} else {
 		// using type/subtype pairs
 		foreach ($pairs as $paired_type => $paired_subtypes) {
@@ -533,7 +548,7 @@ function elgg_river_get_action_where_sql($types) {
 /**
  * Get the where clause based on river view strings
  *
- * @param array $types Array of view strings
+ * @param array $views Array of view strings
  *
  * @return string
  * @since 1.8.0
@@ -611,6 +626,16 @@ function elgg_river_page_handler($page) {
 }
 
 /**
+ * Register river unit tests
+ * @access private
+ */
+function elgg_river_test($hook, $type, $value) {
+	global $CONFIG;
+	$value[] = $CONFIG->path . 'engine/tests/ElggCoreRiverAPITest.php';
+	return $value;
+}
+
+/**
  * Initialize river library
  * @access private
  */
@@ -618,8 +643,12 @@ function elgg_river_init() {
 	elgg_register_page_handler('activity', 'elgg_river_page_handler');
 	$item = new ElggMenuItem('activity', elgg_echo('activity'), 'activity');
 	elgg_register_menu_item('site', $item);
-
+	
 	elgg_register_widget_type('river_widget', elgg_echo('river:widget:title'), elgg_echo('river:widget:description'));
+
+	elgg_register_action('river/delete', '', 'admin');
+
+	elgg_register_plugin_hook_handler('unit_test', 'system', 'elgg_river_test');
 }
 
 elgg_register_event_handler('init', 'system', 'elgg_river_init');

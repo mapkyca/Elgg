@@ -158,7 +158,7 @@ function remove_entity_relationship($guid_one, $relationship, $guid_two) {
 			and relationship='$relationship'
 			and guid_two=$guid_two";
 
-		return delete_data($query);
+		return (bool)delete_data($query);
 	} else {
 		return false;
 	}
@@ -239,6 +239,15 @@ function get_entity_relationships($guid, $inverse_relationship = FALSE) {
  * Also accepts all options available to elgg_get_entities() and
  * elgg_get_entities_from_metadata().
  *
+ * To ask for entities that do not have a particulat relationship to an entity,
+ * use a custom where clause like the following:
+ *
+ * 	$options['wheres'][] = "NOT EXISTS (
+ *			SELECT 1 FROM {$db_prefix}entity_relationships
+ *				WHERE guid_one = e.guid
+ *				AND relationship = '$relationship'
+ *		)";
+ *
  * @see elgg_get_entities
  * @see elgg_get_entities_from_metadata
  *
@@ -290,7 +299,7 @@ function elgg_get_entities_from_relationship($options) {
 			$options['selects'] = array();
 		}
 
-		$select = array('r.*');
+		$select = array('r.id');
 
 		$options['selects'] = array_merge($options['selects'], $select);
 	}
@@ -399,8 +408,8 @@ function elgg_list_entities_from_relationship_count($options) {
 /**
  * Sets the URL handler for a particular relationship type
  *
- * @param string $function_name     The function to register
  * @param string $relationship_type The relationship type.
+ * @param string $function_name     The function to register
  *
  * @return bool Depending on success
  */
@@ -462,85 +471,6 @@ function get_relationship_url($id) {
 	}
 
 	return false;
-}
-
-/**** HELPER FUNCTIONS FOR RELATIONSHIPS OF TYPE 'ATTACHED' ****/
-// @todo what is this?
-
-/**
- * Function to determine if the object trying to attach to other, has already done so
- *
- * @param int $guid_one This is the target object
- * @param int $guid_two This is the object trying to attach to $guid_one
- *
- * @return bool
- * @access private
- */
-function already_attached($guid_one, $guid_two) {
-	if ($attached = check_entity_relationship($guid_one, "attached", $guid_two)) {
-		return true;
-	} else {
-		return false;
-	}
-}
-
-/**
- * Function to get all objects attached to a particular object
- *
- * @param int    $guid Entity GUID
- * @param string $type The type of object to return e.g. 'file', 'friend_of' etc
- *
- * @return an array of objects
- * @access private
- */
-function get_attachments($guid, $type = "") {
-	$options = array(
-					'relationship' => 'attached',
-					'relationship_guid' => $guid,
-					'inverse_relationship' => false,
-					'types' => $type,
-					'subtypes' => '',
-					'owner_guid' => 0,
-					'order_by' => 'time_created desc',
-					'limit' => 10,
-					'offset' => 0,
-					'count' => false,
-					'site_guid' => 0
-				);
-	$attached = elgg_get_entities_from_relationship($options);
-	return $attached;
-}
-
-/**
- * Function to remove a particular attachment between two objects
- *
- * @param int $guid_one This is the target object
- * @param int $guid_two This is the object to remove from $guid_one
- *
- * @return void
- * @access private
- */
-function remove_attachment($guid_one, $guid_two) {
-	if (already_attached($guid_one, $guid_two)) {
-		remove_entity_relationship($guid_one, "attached", $guid_two);
-	}
-}
-
-/**
- * Function to start the process of attaching one object to another
- *
- * @param int $guid_one This is the target object
- * @param int $guid_two This is the object trying to attach to $guid_one
- *
- * @return true|void
- * @access private
- */
-function make_attachment($guid_one, $guid_two) {
-	if (!(already_attached($guid_one, $guid_two))) {
-		if (add_entity_relationship($guid_one, "attached", $guid_two)) {
-			return true;
-		}
-	}
 }
 
 /**

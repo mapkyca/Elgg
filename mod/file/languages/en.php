@@ -5,7 +5,7 @@
  * @package ElggFile
  */
 
-$english = array(
+return array(
 
 	/**
 	 * Menu items and titles
@@ -22,7 +22,6 @@ $english = array(
 	'file:gallery_list' => "Gallery or list view",
 	'file:num_files' => "Number of files to display",
 	'file:user:gallery'=>'View %s gallery',
-	'file:via' => 'via files',
 	'file:upload' => "Upload a file",
 	'file:replace' => 'Replace file content (leave blank to not change file)',
 	'file:list:title' => "%s's %s %s",
@@ -79,6 +78,15 @@ $english = array(
 	'item:object:file' => 'Files',
 
 	'file:newupload' => 'A new file has been uploaded',
+	'file:notification' =>
+'%s uploaded a new file:
+
+%s
+%s
+
+View and comment on the new file:
+%s
+',
 
 	/**
 	 * Embed media
@@ -106,5 +114,3 @@ $english = array(
 		'file:cannotload' => "There was an error uploading the file",
 		'file:nofile' => "You must select a file",
 );
-
-add_translation("en", $english);

@@ -7,65 +7,6 @@
  * purposes and subsystems.  Many of them should be moved to more relevant files.
  */
 
-// prep core classes to be autoloadable
-spl_autoload_register('_elgg_autoload');
-elgg_register_classes(dirname(dirname(__FILE__)) . '/classes');
-
-/**
- * Autoload classes
- *
- * @param string $class The name of the class
- *
- * @return void
- * @throws Exception
- * @access private
- */
-function _elgg_autoload($class) {
-	global $CONFIG;
-
-	if (!isset($CONFIG->classes[$class]) || !include($CONFIG->classes[$class])) {
-		return false;
-	}
-}
-
-/**
- * Register all files found in $dir as classes
- * Need to be named MyClass.php
- *
- * @param string $dir The dir to look in
- *
- * @return void
- * @since 1.8.0
- */
-function elgg_register_classes($dir) {
-	$classes = elgg_get_file_list($dir, array(), array(), array('.php'));
-
-	foreach ($classes as $class) {
-		elgg_register_class(basename($class, '.php'), $class);
-	}
-}
-
-/**
- * Register a classname to a file.
- *
- * @param string $class    The name of the class
- * @param string $location The location of the file
- *
- * @return true
- * @since 1.8.0
- */
-function elgg_register_class($class, $location) {
-	global $CONFIG;
-
-	if (!isset($CONFIG->classes)) {
-		$CONFIG->classes = array();
-	}
-
-	$CONFIG->classes[$class] = $location;
-
-	return true;
-}
-
 /**
  * Register a php library.
  *
@@ -107,7 +48,10 @@ function elgg_load_library($name) {
 	}
 
 	if (!include_once($CONFIG->libraries[$name])) {
-		$error = elgg_echo('InvalidParameterException:LibraryNotRegistered', array($name));
+		$error = elgg_echo('InvalidParameterException:LibraryNotFound', array(
+			$name,
+			$CONFIG->libraries[$name])
+		);
 		throw new InvalidParameterException($error);
 	}
 }
@@ -992,7 +936,8 @@ function elgg_trigger_plugin_hook($hook, $type, $params = null, $returnvalue = n
  * @access private
  */
 function _elgg_php_exception_handler($exception) {
-	error_log("*** FATAL EXCEPTION *** : " . $exception);
+	$timestamp = time();
+	error_log("Exception #$timestamp: $exception");
 
 	// Wipe any existing output buffer
 	ob_end_clean();
@@ -1008,7 +953,17 @@ function _elgg_php_exception_handler($exception) {
 		$CONFIG->pagesetupdone = true;
 
 		elgg_set_viewtype('failsafe');
-		$body = elgg_view("messages/exceptions/exception", array('object' => $exception));
+		if (elgg_is_admin_logged_in()) {
+			$body = elgg_view("messages/exceptions/admin_exception", array(
+				'object' => $exception,
+				'ts' => $timestamp
+			));
+		} else {
+			$body = elgg_view("messages/exceptions/exception", array(
+				'object' => $exception,
+				'ts' => $timestamp
+			));
+		}
 		echo elgg_view_page(elgg_echo('exception:title'), $body);
 	} catch (Exception $e) {
 		$timestamp = time();
@@ -1039,6 +994,7 @@ function _elgg_php_exception_handler($exception) {
  *
  * @return true
  * @access private
+ * @todo Replace error_log calls with elgg_log calls.
  */
 function _elgg_php_error_handler($errno, $errmsg, $filename, $linenum, $vars) {
 	$error = date("Y-m-d H:i:s (T)") . ": \"$errmsg\" in file $filename (line $linenum)";
@@ -1054,6 +1010,7 @@ function _elgg_php_error_handler($errno, $errmsg, $filename, $linenum, $vars) {
 
 		case E_WARNING :
 		case E_USER_WARNING :
+		case E_RECOVERABLE_ERROR: // (e.g. type hint violation)
 			error_log("PHP WARNING: $error");
 			break;
 
@@ -1078,8 +1035,8 @@ function _elgg_php_error_handler($errno, $errmsg, $filename, $linenum, $vars) {
  *
  * @note No messages will be displayed unless debugging has been enabled.
  *
- * @param str $message User message
- * @param str $level   NOTICE | WARNING | ERROR | DEBUG
+ * @param string $message User message
+ * @param string $level   NOTICE | WARNING | ERROR | DEBUG
  *
  * @return bool
  * @since 1.7.0
@@ -1141,9 +1098,11 @@ function elgg_dump($value, $to_screen = TRUE, $level = 'NOTICE') {
 	global $CONFIG;
 
 	// plugin can return false to stop the default logging method
-	$params = array('level' => $level,
-					'msg' => $value,
-					'to_screen' => $to_screen);
+	$params = array(
+		'level' => $level,
+		'msg' => $value,
+		'to_screen' => $to_screen,
+	);
 	if (!elgg_trigger_plugin_hook('debug', 'log', $params, true)) {
 		return;
 	}
@@ -1169,7 +1128,9 @@ function elgg_dump($value, $to_screen = TRUE, $level = 'NOTICE') {
  *
  * This function either displays or logs the deprecation message,
  * depending upon the deprecation policies in {@link CODING.txt}.
- * Logged messages are sent with the level of 'WARNING'.
+ * Logged messages are sent with the level of 'WARNING'. Only admins
+ * get visual deprecation notices. When non-admins are logged in, the
+ * notices are sent to PHP's log through elgg_dump().
  *
  * A user-visual message will be displayed if $dep_version is greater
  * than 1 minor releases lower than the current Elgg version, or at all
@@ -1180,11 +1141,12 @@ function elgg_dump($value, $to_screen = TRUE, $level = 'NOTICE') {
  *
  * @see CODING.txt
  *
- * @param str $msg             Message to log / display.
- * @param str $dep_version     Human-readable *release* version: 1.7, 1.7.3
- * @param int $backtrace_level How many levels back to display the backtrace. Useful if calling from
- *                             functions that are called from other places (like elgg_view()). Set
- *                             to -1 for a full backtrace.
+ * @param string $msg             Message to log / display.
+ * @param string $dep_version     Human-readable *release* version: 1.7, 1.8, ...
+ * @param int    $backtrace_level How many levels back to display the backtrace.
+ *                                Useful if calling from functions that are called
+ *                                from other places (like elgg_view()). Set to -1
+ *                                for a full backtrace.
  *
  * @return bool
  * @since 1.7.0
@@ -1193,13 +1155,13 @@ function elgg_deprecated_notice($msg, $dep_version, $backtrace_level = 1) {
 	// if it's a major release behind, visual and logged
 	// if it's a 1 minor release behind, visual and logged
 	// if it's for current minor release, logged.
-	// bugfixes don't matter because you're not deprecating between them, RIGHT?
+	// bugfixes don't matter because we are not deprecating between them
 
 	if (!$dep_version) {
-		return FALSE;
+		return false;
 	}
 
-	$elgg_version = get_version(TRUE);
+	$elgg_version = get_version(true);
 	$elgg_version_arr = explode('.', $elgg_version);
 	$elgg_major_version = (int)$elgg_version_arr[0];
 	$elgg_minor_version = (int)$elgg_version_arr[1];
@@ -1207,16 +1169,16 @@ function elgg_deprecated_notice($msg, $dep_version, $backtrace_level = 1) {
 	$dep_major_version = (int)$dep_version;
 	$dep_minor_version = 10 * ($dep_version - $dep_major_version);
 
-	$visual = FALSE;
+	$visual = false;
 
 	if (($dep_major_version < $elgg_major_version) ||
 		($dep_minor_version < $elgg_minor_version)) {
-		$visual = TRUE;
+		$visual = true;
 	}
 
 	$msg = "Deprecated in $dep_major_version.$dep_minor_version: $msg";
 
-	if ($visual) {
+	if ($visual && elgg_is_admin_logged_in()) {
 		register_error($msg);
 	}
 
@@ -1246,7 +1208,7 @@ function elgg_deprecated_notice($msg, $dep_version, $backtrace_level = 1) {
 
 	elgg_log($msg, 'WARNING');
 
-	return TRUE;
+	return true;
 }
 
 /**
@@ -1554,10 +1516,14 @@ function elgg_http_url_is_identical($url1, $url2, $ignore_params = array('offset
  * @param bool   $strict  Return array key if it's set, even if empty. If false,
  *                        return $default if the array key is unset or empty.
  *
- * @return void
+ * @return mixed
  * @since 1.8.0
  */
-function elgg_extract($key, array $array, $default = NULL, $strict = true) {
+function elgg_extract($key, array $array, $default = null, $strict = true) {
+	if (!is_array($array)) {
+		return $default;
+	}
+
 	if ($strict) {
 		return (isset($array[$key])) ? $array[$key] : $default;
 	} else {
@@ -1769,6 +1735,12 @@ function elgg_ajax_page_handler($page) {
 		unset($page[0]);
 		$view = implode('/', $page);
 
+		$allowed_views = elgg_get_config('allowed_ajax_views');
+		if (!array_key_exists($view, $allowed_views)) {
+			header('HTTP/1.1 403 Forbidden');
+			exit;
+		}
+
 		// pull out GET parameters through filter
 		$vars = array();
 		foreach ($_GET as $name => $value) {
@@ -1835,12 +1807,12 @@ function elgg_cacheable_view_page_handler($page, $type) {
 	if ($page) {
 		// the view file names can have multiple dots
 		// eg: views/default/js/calendars/jquery.fullcalendar.min.php
-		// translates to the url /js/calendars/jquery.fullcalendar.min.<ts>.js
+		// translates to the url /js/<ts>/calendars/jquery.fullcalendar.min.js
 		// and the view js/calendars/jquery.fullcalendar.min
 		// we ignore the last two dots for the ts and the ext.
 		// Additionally, the timestamp is optional.
 		$page = implode('/', $page);
-		$regex = '|(.+?)\.([\d]+\.)?\w+$|';
+		$regex = '|\d+/(.+?)\.\w+$|';
 		preg_match($regex, $page, $matches);
 		$view = $matches[1];
 		$return = elgg_view("$type/$view");
@@ -1945,7 +1917,7 @@ function elgg_is_valid_options_for_batch_operation($options, $type) {
 	// at least one of these is required.
 	$required = array(
 		// generic restraints
-		'guid', 'guids', 'limit'
+		'guid', 'guids'
 	);
 
 	switch ($type) {
@@ -1989,20 +1961,52 @@ function elgg_is_valid_options_for_batch_operation($options, $type) {
  *
  * @link http://docs.elgg.org/Tutorials/WalledGarden
  * @elgg_plugin_hook index system
+ *
+ * @param string $hook   The name of the hook
+ * @param string $type   The type of hook
+ * @param bool   $value  Has a plugin already rendered an index page?
+ * @param array  $params Array of parameters (should be empty)
  * @return bool
  * @access private
  */
-function elgg_walled_garden_index() {
-	elgg_register_css('elgg.walled_garden', '/css/walled_garden.css');
+function elgg_walled_garden_index($hook, $type, $value, $params) {
+	if ($value) {
+		// do not create a second index page so return
+		return;
+	}
+
 	elgg_load_css('elgg.walled_garden');
-	elgg_register_js('elgg.walled_garden', '/js/walled_garden.js');
 	elgg_load_js('elgg.walled_garden');
 	
-	$body = elgg_view('core/walled_garden/body');
+	$content = elgg_view('core/walled_garden/login');
 
+	$params = array(
+		'content' => $content,
+		'class' => 'elgg-walledgarden-double',
+		'id' => 'elgg-walledgarden-login',
+	);
+	$body = elgg_view_layout('walled_garden', $params);
 	echo elgg_view_page('', $body, 'walled_garden');
 
 	// return true to prevent other plugins from adding a front page
+	return true;
+}
+
+/**
+ * Serve walled garden sections
+ *
+ * @param array $page Array of URL segments
+ * @return string
+ * @access private
+ */
+function _elgg_walled_garden_ajax_handler($page) {
+	$view = $page[0];
+	$params = array(
+		'content' => elgg_view("core/walled_garden/$view"),
+		'class' => 'elgg-walledgarden-single hidden',
+		'id' => str_replace('_', '-', "elgg-walledgarden-$view"),
+	);
+	echo elgg_view_layout('walled_garden', $params);
 	return true;
 }
 
@@ -2023,10 +2027,68 @@ function elgg_walled_garden_index() {
 function elgg_walled_garden() {
 	global $CONFIG;
 
+	elgg_register_simplecache_view('js/walled_garden');
+	elgg_register_simplecache_view('css/walled_garden');
+	elgg_register_css('elgg.walled_garden', elgg_get_simplecache_url('css', 'walled_garden'));
+	elgg_register_js('elgg.walled_garden', elgg_get_simplecache_url('js', 'walled_garden'));
+
+	elgg_register_page_handler('walled_garden', '_elgg_walled_garden_ajax_handler');
+
 	// check for external page view
 	if (isset($CONFIG->site) && $CONFIG->site instanceof ElggSite) {
 		$CONFIG->site->checkWalledGarden();
 	}
+}
+
+/**
+ * Remove public access for walled gardens
+ *
+ * @param string $hook
+ * @param string $type
+ * @param array $accesses
+ * @return array
+ * @access private
+ */
+function _elgg_walled_garden_remove_public_access($hook, $type, $accesses) {
+	if (isset($accesses[ACCESS_PUBLIC])) {
+		unset($accesses[ACCESS_PUBLIC]);
+	}
+	return $accesses;
+}
+
+/**
+ * Boots the engine
+ *
+ * 1. sets error handlers
+ * 2. connects to database
+ * 3. verifies the installation succeeded
+ * 4. loads application configuration
+ * 5. loads i18n data
+ * 6. loads cached autoloader state
+ * 7. loads site configuration
+ *
+ * @access private
+ */
+function _elgg_engine_boot() {
+	// Register the error handlers
+	set_error_handler('_elgg_php_error_handler');
+	set_exception_handler('_elgg_php_exception_handler');
+
+	setup_db_connections();
+
+	verify_installation();
+
+	_elgg_load_application_config();
+
+	_elgg_load_autoload_cache();
+
+	_elgg_load_site_config();
+
+	_elgg_session_boot();
+
+	_elgg_load_cache();
+
+	_elgg_load_translations();
 }
 
 /**
@@ -2055,6 +2117,7 @@ function elgg_init() {
 	elgg_register_js('jquery.easing', 'vendors/jquery/jquery.easing.1.3.packed.js');
 	elgg_register_js('elgg.avatar_cropper', 'js/lib/ui.avatar_cropper.js');
 	elgg_register_js('jquery.imgareaselect', 'vendors/jquery/jquery.imgareaselect-0.9.8/scripts/jquery.imgareaselect.min.js');
+	elgg_register_js('elgg.ui.river', 'js/lib/ui.river.js');
 
 	elgg_register_css('jquery.imgareaselect', 'vendors/jquery/jquery.imgareaselect-0.9.8/css/imgareaselect-deprecated.css');
 	
@@ -2091,14 +2154,14 @@ function elgg_init() {
  * @param array  $params empty
  *
  * @elgg_plugin_hook unit_tests system
- * @return void
+ * @return array
  * @access private
  */
 function elgg_api_test($hook, $type, $value, $params) {
 	global $CONFIG;
-	$value[] = $CONFIG->path . 'engine/tests/api/entity_getter_functions.php';
-	$value[] = $CONFIG->path . 'engine/tests/api/helpers.php';
-	$value[] = $CONFIG->path . 'engine/tests/regression/trac_bugs.php';
+	$value[] = $CONFIG->path . 'engine/tests/ElggCoreEntityGetterFunctionsTest.php';
+	$value[] = $CONFIG->path . 'engine/tests/ElggCoreHelpersTest.php';
+	$value[] = $CONFIG->path . 'engine/tests/ElggCoreRegressionBugsTest.php';
 	return $value;
 }
 
@@ -2137,7 +2200,7 @@ define('ELGG_ENTITIES_NO_VALUE', 0);
  * referring page.
  *
  * @see forward
- * @var unknown_type
+ * @var int -1
  */
 define('REFERRER', -1);
 
@@ -2152,6 +2215,7 @@ define('REFERRER', -1);
 define('REFERER', -1);
 
 elgg_register_event_handler('init', 'system', 'elgg_init');
+elgg_register_event_handler('boot', 'system', '_elgg_engine_boot', 1);
 elgg_register_plugin_hook_handler('unit_test', 'system', 'elgg_api_test');
 
 elgg_register_event_handler('init', 'system', 'add_custom_menu_items', 1000);

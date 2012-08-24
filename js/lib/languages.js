@@ -4,8 +4,6 @@
  */
 elgg.provide('elgg.config.translations');
 
-elgg.config.language = 'en';
-
 /**
  * Analagous to the php version.  Merges translations for a
  * given language into the current translations map.
@@ -26,16 +24,22 @@ elgg.add_translation = function(lang, translations) {
 elgg.reload_all_translations = function(language) {
 	var lang = language || elgg.get_language();
 
-	elgg.getJSON('ajax/view/js/languages', {
-		data: {
-			language: lang
-		},
-		success: function(json) {
-			elgg.add_translation(lang, json);
-			elgg.config.languageReady = true;
-			elgg.initWhenReady();
-		}
-	});
+	var url, options;
+	if (elgg.config.simplecache_enabled) {
+		url = 'cache/js/' + elgg.config.lastcache + '/default/languages/' + lang + '.js';
+		options = {};
+	} else {
+		url = 'ajax/view/js/languages';
+		options = {data: {language: lang}};
+	}
+
+	options['success'] = function(json) {
+		elgg.add_translation(lang, json);
+		elgg.config.languageReady = true;
+		elgg.initWhenReady();
+	};
+
+	elgg.getJSON(url, options);
 };
 
 /**

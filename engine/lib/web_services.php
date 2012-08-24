@@ -1165,7 +1165,7 @@ function list_all_apis() {
  * @access private
  */
 function auth_gettoken($username, $password) {
-	if (authenticate($username, $password)) {
+	if (true === elgg_authenticate($username, $password)) {
 		$token = create_user_token($username);
 		if ($token) {
 			return $token;
@@ -1397,7 +1397,7 @@ function rest_handler() {
  */
 function api_unit_test($hook, $type, $value, $params) {
 	global $CONFIG;
-	$value[] = $CONFIG->path . 'engine/tests/services/api.php';
+	$value[] = $CONFIG->path . 'engine/tests/ElggCoreServicesApiTest.php';
 	return $value;
 }
 

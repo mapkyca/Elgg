@@ -106,7 +106,11 @@ function groups_handle_owned_page() {
 
 	$page_owner = elgg_get_page_owner_entity();
 
-	$title = elgg_echo('groups:owned');
+	if ($page_owner->guid == elgg_get_logged_in_user_guid()) {
+		$title = elgg_echo('groups:owned');
+	} else {
+		$title = elgg_echo('groups:owned:user', array($page_owner->name));
+	}
 	elgg_push_breadcrumb($title);
 
 	elgg_register_title_button();
@@ -137,7 +141,11 @@ function groups_handle_mine_page() {
 
 	$page_owner = elgg_get_page_owner_entity();
 
-	$title = elgg_echo('groups:yours');
+	if ($page_owner->guid == elgg_get_logged_in_user_guid()) {
+		$title = elgg_echo('groups:yours');
+	} else {
+		$title = elgg_echo('groups:user', array($page_owner->name));
+	}
 	elgg_push_breadcrumb($title);
 
 	elgg_register_title_button();
@@ -238,6 +246,8 @@ function groups_handle_profile_page($guid) {
 	global $autofeed;
 	$autofeed = true;
 
+	elgg_push_context('group_profile');
+
 	$group = get_entity($guid);
 	if (!$group) {
 		forward('groups/all');
@@ -245,14 +255,18 @@ function groups_handle_profile_page($guid) {
 
 	elgg_push_breadcrumb($group->name);
 
+	groups_register_profile_buttons($group);
+
 	$content = elgg_view('groups/profile/layout', array('entity' => $group));
 	if (group_gatekeeper(false)) {
-		$sidebar = elgg_view('groups/sidebar/members', array('entity' => $group));
+		$sidebar = '';
+		if (elgg_is_active_plugin('search')) {
+			$sidebar .= elgg_view('groups/sidebar/search', array('entity' => $group));
+		}
+		$sidebar .= elgg_view('groups/sidebar/members', array('entity' => $group));
 	} else {
 		$sidebar = '';
 	}
-
-	groups_register_profile_buttons($group);
 
 	$params = array(
 		'content' => $content,

@@ -33,9 +33,9 @@ function users_settings_save() {
  * @access private
  */
 function elgg_set_user_password() {
-	$current_password = get_input('current_password');
-	$password = get_input('password');
-	$password2 = get_input('password2');
+	$current_password = get_input('current_password', null, false);
+	$password = get_input('password', null, false);
+	$password2 = get_input('password2', null, false);
 	$user_guid = get_input('guid');
 
 	if (!$user_guid) {
@@ -265,28 +265,32 @@ function elgg_set_user_default_access() {
  * @access private
  */
 function usersettings_pagesetup() {
-	if (elgg_get_context() == "settings" && elgg_get_logged_in_user_guid()) {
-		$user = elgg_get_logged_in_user_entity();
+	$user = elgg_get_page_owner_entity();
 
-		$params = array(
-			'name' => '1_account',
-			'text' => elgg_echo('usersettings:user:opt:linktext'),
-			'href' => "settings/user/{$user->username}",
-		);
-		elgg_register_menu_item('page', $params);
-		$params = array(
-			'name' => '1_plugins',
-			'text' => elgg_echo('usersettings:plugins:opt:linktext'),
-			'href' => "settings/plugins/{$user->username}",
-		);
-		elgg_register_menu_item('page', $params);
-		$params = array(
-			'name' => '1_statistics',
-			'text' => elgg_echo('usersettings:statistics:opt:linktext'),
-			'href' => "settings/statistics/{$user->username}",
-		);
-		elgg_register_menu_item('page', $params);
-	}
+	$params = array(
+		'name' => '1_account',
+		'text' => elgg_echo('usersettings:user:opt:linktext'),
+		'href' => "settings/user/{$user->username}",
+		'section' => 'configure',
+		'contexts' => array('settings'),
+	);
+	elgg_register_menu_item('page', $params);
+	$params = array(
+		'name' => '1_plugins',
+		'text' => elgg_echo('usersettings:plugins:opt:linktext'),
+		'href' => "settings/plugins/{$user->username}",
+		'section' => 'configure',
+		'contexts' => array('settings'),
+	);
+	elgg_register_menu_item('page', $params);
+	$params = array(
+		'name' => '1_statistics',
+		'text' => elgg_echo('usersettings:statistics:opt:linktext'),
+		'href' => "settings/statistics/{$user->username}",
+		'section' => 'configure',
+		'contexts' => array('settings'),
+	);
+	elgg_register_menu_item('page', $params);
 }
 
 /**
@@ -346,6 +350,13 @@ function usersettings_init() {
 	elgg_register_plugin_hook_handler('usersettings:save', 'user', 'users_settings_save');
 
 	elgg_register_action("usersettings/save");
+
+	// extend the account settings form
+	elgg_extend_view('forms/account/settings', 'core/settings/account/name', 100);
+	elgg_extend_view('forms/account/settings', 'core/settings/account/password', 100);
+	elgg_extend_view('forms/account/settings', 'core/settings/account/email', 100);
+	elgg_extend_view('forms/account/settings', 'core/settings/account/language', 100);
+	elgg_extend_view('forms/account/settings', 'core/settings/account/default_access', 100);
 }
 
 elgg_register_event_handler('init', 'system', 'usersettings_init');

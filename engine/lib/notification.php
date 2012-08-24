@@ -480,13 +480,14 @@ function object_notifications($event, $object_type, $object) {
 		}
 
 		if (isset($CONFIG->register_objects[$object_type][$object_subtype])) {
-			$descr = $CONFIG->register_objects[$object_type][$object_subtype];
-			$string = $descr . ": " . $object->getURL();
+			$subject = $CONFIG->register_objects[$object_type][$object_subtype];
+			$string = $subject . ": " . $object->getURL();
 
 			// Get users interested in content from this person and notify them
 			// (Person defined by container_guid so we can also subscribe to groups if we want)
 			foreach ($NOTIFICATION_HANDLERS as $method => $foo) {
 				$interested_users = elgg_get_entities_from_relationship(array(
+					'site_guids' => ELGG_ENTITIES_ANY_VALUE,
 					'relationship' => 'notify' . $method,
 					'relationship_guid' => $object->container_guid,
 					'inverse_relationship' => TRUE,
@@ -499,16 +500,16 @@ function object_notifications($event, $object_type, $object) {
 						if ($user instanceof ElggUser && !$user->isBanned()) {
 							if (($user->guid != $SESSION['user']->guid) && has_access_to_entity($object, $user)
 							&& $object->access_id != ACCESS_PRIVATE) {
-								$methodstring = elgg_trigger_plugin_hook('notify:entity:message', $object->getType(), array(
+								$body = elgg_trigger_plugin_hook('notify:entity:message', $object->getType(), array(
 									'entity' => $object,
 									'to_entity' => $user,
 									'method' => $method), $string);
-								if (empty($methodstring) && $methodstring !== false) {
-									$methodstring = $string;
+								if (empty($body) && $body !== false) {
+									$body = $string;
 								}
-								if ($methodstring !== false) {
-									notify_user($user->guid, $object->container_guid, $descr, $methodstring,
-										NULL, array($method));
+								if ($body !== false) {
+									notify_user($user->guid, $object->container_guid, $subject, $body,
+										null, array($method));
 								}
 							}
 						}

@@ -127,6 +127,10 @@ function elgg_is_admin_user($user_guid) {
 /**
  * Perform user authentication with a given username and password.
  *
+ * @warning This returns an error message on failure. Use the identical operator to check
+ * for access: if (true === elgg_authenticate()) { ... }.
+ *
+ *
  * @see login
  *
  * @param string $username The username
@@ -300,7 +304,12 @@ function login(ElggUser $user, $persistent = false) {
 		$code = (md5($user->name . $user->username . time() . rand()));
 		$_SESSION['code'] = $code;
 		$user->code = md5($code);
-		setcookie("elggperm", $code, (time() + (86400 * 30)), "/");
+		
+		$cookie = new ElggCookie("elggperm");
+		$cookie->value = $code;
+		$cookie->setExpire("+30 days");
+		
+		elgg_set_cookie($cookie);
 	}
 
 	if (!$user->save() || !elgg_trigger_event('login', 'user', $user)) {
@@ -310,7 +319,12 @@ function login(ElggUser $user, $persistent = false) {
 		unset($_SESSION['guid']);
 		unset($_SESSION['id']);
 		unset($_SESSION['user']);
-		setcookie("elggperm", "", (time() - (86400 * 30)), "/");
+		
+		$cookie = new ElggCookie("elggperm");
+		$cookie->setExpire("-30 days");
+		
+		elgg_set_cookie($cookie);
+		
 		throw new LoginException(elgg_echo('LoginException:Unknown'));
 	}
 
@@ -322,6 +336,23 @@ function login(ElggUser $user, $persistent = false) {
 	reset_login_failure_count($user->guid); // Reset any previous failed login attempts
 
 	return true;
+}
+
+/**
+ * Set a cookie, but allow plugins to customize it first.
+ *
+ * To customize all cookies, register for the 'init:cookie', 'all' event.
+ *
+ * @param ElggCookie $cookie The cookie that is being set
+ * @return bool
+ * @since 1.9
+ */
+function elgg_set_cookie(ElggCookie $cookie) {
+	if (elgg_trigger_event('init:cookie', $cookie->name, $cookie)) {
+		return setcookie($cookie->name, $cookie->value, $cookie->expire, $cookie->path,
+						$cookie->domain, $cookie->secure, $cookie->httponly);
+	}
+	return false;
 }
 
 /**
@@ -347,7 +378,11 @@ function logout() {
 	unset($_SESSION['id']);
 	unset($_SESSION['user']);
 
-	setcookie("elggperm", "", (time() - (86400 * 30)), "/");
+	$cookie = new ElggCookie("elggperm");
+	$cookie->setExpire("-30 days");
+	$cookie->domain = "/";
+
+	elgg_set_cookie($cookie);
 
 	// pass along any messages
 	$old_msg = $_SESSION['msg'];
@@ -355,7 +390,7 @@ function logout() {
 	session_destroy();
 
 	// starting a default session to store any post-logout messages.
-	session_init(NULL, NULL, NULL);
+	_elgg_session_boot(NULL, NULL, NULL);
 	$_SESSION['msg'] = $old_msg;
 
 	return TRUE;
@@ -372,14 +407,10 @@ function logout() {
  *
  * @uses $_SESSION
  *
- * @param string $event       Event name
- * @param string $object_type Object type
- * @param mixed  $object      Object
- *
  * @return bool
  * @access private
  */
-function session_init($event, $object_type, $object) {
+function _elgg_session_boot() {
 	global $DB_PREFIX, $CONFIG;
 
 	// Use database for sessions
@@ -444,8 +475,8 @@ function session_init($event, $object_type, $object) {
 		set_last_action($_SESSION['guid']);
 	}
 
-	elgg_register_action("login", '', 'public');
-	elgg_register_action("logout");
+	elgg_register_action('login', '', 'public');
+	elgg_register_action('logout');
 
 	// Register a default PAM handler
 	register_pam_handler('pam_auth_userpass');
@@ -459,9 +490,6 @@ function session_init($event, $object_type, $object) {
 		session_destroy();
 		return false;
 	}
-
-	// Since we have loaded a new user, this user may have different language preferences
-	register_translations(dirname(dirname(dirname(__FILE__))) . "/languages/");
 
 	return true;
 }
@@ -654,5 +682,3 @@ function _elgg_session_gc($maxlifetime) {
 
 	return true;
 }
-
-elgg_register_event_handler("boot", "system", "session_init", 20);

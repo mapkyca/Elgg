@@ -34,8 +34,6 @@
 
 	<category>ServiceAPI</category>
 
-	<activate_on_install>true</activate_on_install>
-
 	<requires>
 		<type>php_extension</type>
 		<name>gd</name>
@@ -45,6 +43,11 @@
 		<type>php_ini</type>
 		<name>short_open_tag</name>
 		<value>off</value>
+	</requires>
+	
+	<requires>
+		<type>php_version</type>
+		<version>5.3</version>
 	</requires>
 
 	<requires>
@@ -101,5 +104,7 @@
 		<name>facebook_connect</name>
 		<version>1.0</version>
 	</suggests>
+
+	<activate_on_install>true</activate_on_install>
 
 </plugin_manifest>

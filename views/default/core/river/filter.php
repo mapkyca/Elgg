@@ -33,18 +33,6 @@ $selector = $vars['selector'];
 if ($selector) {
 	$params['value'] = $selector;
 }
-echo elgg_view('input/dropdown', $params);
-?>
-<?php //@todo JS 1.8: no ?>
-<script type="text/javascript">
-elgg.register_hook_handler('init', 'system', function() {
-	$('#elgg-river-selector').change(function() {
-		var url = window.location.href;
-		if (window.location.search.length) {
-			url = url.substring(0, url.indexOf('?'));
-		}
-		url += '?' + $(this).val();
-		elgg.forward(url);
-	});
-});
-</script>
+echo elgg_view('input/select', $params);
+
+elgg_load_js('elgg.ui.river');

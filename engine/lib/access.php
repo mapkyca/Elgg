@@ -31,7 +31,7 @@ function get_access_list($user_id = 0, $site_id = 0, $flush = false) {
 	global $CONFIG, $init_finished;
 	static $access_list;
 
-	if (!isset($access_list) || !$init_finished) {
+	if (!isset($access_list)) {
 		$access_list = array();
 	}
 
@@ -49,9 +49,16 @@ function get_access_list($user_id = 0, $site_id = 0, $flush = false) {
 		return $access_list[$user_id];
 	}
 
-	$access_list[$user_id] = "(" . implode(",", get_access_array($user_id, $site_id, $flush)) . ")";
+	$access = "(" . implode(",", get_access_array($user_id, $site_id, $flush)) . ")";
 
-	return $access_list[$user_id];
+	// only cache if done with init and access is enabled (unless admin user)
+	// session is loaded before init is finished, so don't need to check for user session
+	if ($init_finished && (elgg_is_admin_logged_in() || !elgg_get_ignore_access())) {
+		$access_list[$user_id] = $access;
+		return $access_list[$user_id];
+	} else {
+		return $access;
+	}
 }
 
 /**
@@ -83,7 +90,7 @@ function get_access_array($user_id = 0, $site_id = 0, $flush = false) {
 	// this cache might be redundant. But db cache is flushed on every db write.
 	static $access_array;
 
-	if (!isset($access_array) || (!isset($init_finished)) || (!$init_finished)) {
+	if (!isset($access_array)) {
 		$access_array = array();
 	}
 
@@ -137,12 +144,12 @@ function get_access_array($user_id = 0, $site_id = 0, $flush = false) {
 				$tmp_access_array[] = ACCESS_PRIVATE;
 			}
 
-			$access_array[$user_id] = $tmp_access_array;
-		} else {
-			// No user id logged in so we can only access public info
-			$tmp_return = $tmp_access_array;
+			// only cache if done with init and access is enabled (unless admin user)
+			// session is loaded before init is finished, so don't need to check for user session
+			if ($init_finished && (elgg_is_admin_logged_in() || !elgg_get_ignore_access())) {
+				$access_array[$user_id] = $tmp_access_array;
+			}
 		}
-
 	} else {
 		$tmp_access_array = $access_array[$user_id];
 	}
@@ -154,7 +161,9 @@ function get_access_array($user_id = 0, $site_id = 0, $flush = false) {
 /**
  * Gets the default access permission.
  *
- * This returns the default access level for the site or optionally for the user.
+ * This returns the default access level for the site or optionally of the user.
+ * If want you to change the default access based on group of other information,
+ * use the 'default', 'access' plugin hook.
  *
  * @param ElggUser $user Get the user's default access. Defaults to logged in user.
  *
@@ -164,19 +173,25 @@ function get_access_array($user_id = 0, $site_id = 0, $flush = false) {
 function get_default_access(ElggUser $user = null) {
 	global $CONFIG;
 
-	if (!$CONFIG->allow_user_default_access) {
-		return $CONFIG->default_access;
+	// site default access
+	$default_access = $CONFIG->default_access;
+
+	// user default access if enabled
+	if ($CONFIG->allow_user_default_access) {
+		$user = $user ? $user : elgg_get_logged_in_user_entity();
+		if ($user) {
+			$user_access = $user->getPrivateSetting('elgg_default_access');
+			if ($user_access !== false) {
+				$default_access = $user_access;
+			}
+		}
 	}
 
-	if (!($user) && (!$user = elgg_get_logged_in_user_entity())) {
-		return $CONFIG->default_access;
-	}
-
-	if (false !== ($default_access = $user->getPrivateSetting('elgg_default_access'))) {
-		return $default_access;
-	} else {
-		return $CONFIG->default_access;
-	}
+	$params = array(
+		'user' => $user,
+		'default_access' => $default_access,
+	);
+	return elgg_trigger_plugin_hook('default', 'access', $params, $default_access);
 }
 
 /**
@@ -610,8 +625,7 @@ function delete_access_collection($collection_id) {
 		WHERE id = {$collection_id}";
 	$result = delete_data($q);
 
-
-	return $result;
+	return (bool)$result;
 }
 
 /**
@@ -672,8 +686,10 @@ function add_user_to_access_collection($user_guid, $collection_id) {
 		return false;
 	}
 
+	// if someone tries to insert the same data twice, we do a no-op on duplicate key
 	$q = "INSERT INTO {$CONFIG->dbprefix}access_collection_membership
-			SET access_collection_id = {$collection_id}, user_guid = {$user_guid}";
+			SET access_collection_id = $collection_id, user_guid = $user_guid
+			ON DUPLICATE KEY UPDATE user_guid = user_guid";
 	$result = insert_data($q);
 
 	return $result !== false;
@@ -718,7 +734,7 @@ function remove_user_from_access_collection($user_guid, $collection_id) {
 		WHERE access_collection_id = {$collection_id}
 			AND user_guid = {$user_guid}";
 
-	return delete_data($q);
+	return (bool)delete_data($q);
 }
 
 /**
@@ -839,7 +855,7 @@ function elgg_list_entities_from_access_id(array $options = array()) {
  *
  * @param int $entity_access_id The entity's access id
  *
- * @return string 'Public', 'Private', etc. or false if error.
+ * @return string 'Public', 'Private', etc.
  * @since 1.7.0
  * @todo I think this probably wants get_access_array() instead of get_write_access_array(),
  * but those two functions return different types of arrays.
@@ -850,15 +866,12 @@ function get_readable_access_level($entity_access_id) {
 	//get the access level for object in readable string
 	$options = get_write_access_array();
 
-	//@todo Really?  Use array_key_exists()
-	foreach ($options as $key => $option) {
-		if ($key == $access) {
-			$entity_acl = htmlentities($option, ENT_QUOTES, 'UTF-8');
-			return $entity_acl;
-			break;
-		}
+	if (array_key_exists($access, $options)) {
+		return $options[$access];
 	}
-	return false;
+
+	// return 'Limited' if the user does not have access to the access collection
+	return elgg_echo('access:limited:label');
 }
 
 /**
@@ -948,7 +961,8 @@ function elgg_get_access_object() {
  *
  * @global bool $init_finished
  * @access private
- * @todo investigate why this is needed
+ * @todo This is required to tell the access system to start caching because
+ * calls are made while in ignore access mode and before the user is logged in.
  */
 $init_finished = false;
 
@@ -988,9 +1002,9 @@ function elgg_override_permissions($hook, $type, $value, $params) {
 	}
 
 	// don't do this so ignore access still works with no one logged in
-//	if (!$user instanceof ElggUser) {
-//		return false;
-//	}
+	//if (!$user instanceof ElggUser) {
+	//	return false;
+	//}
 
 	// check for admin
 	if ($user_guid && elgg_is_admin_user($user_guid)) {
@@ -1012,12 +1026,13 @@ function elgg_override_permissions($hook, $type, $value, $params) {
  */
 function access_test($hook, $type, $value, $params) {
 	global $CONFIG;
-	$value[] = $CONFIG->path . 'engine/tests/api/access_collections.php';
+	$value[] = $CONFIG->path . 'engine/tests/ElggCoreAccessCollectionsTest.php';
 	return $value;
 }
 
-// This function will let us know when 'init' has finished
-elgg_register_event_handler('init', 'system', 'access_init', 9999);
+// Tell the access functions the system has booted, plugins are loaded,
+// and the user is logged in so it can start caching
+elgg_register_event_handler('ready', 'system', 'access_init');
 
 // For overrided permissions
 elgg_register_plugin_hook_handler('permissions_check', 'all', 'elgg_override_permissions');

@@ -5,12 +5,13 @@
 * @package ElggMessages
 */
 
-$english = array(
+return array(
 	/**
 	* Menu items and titles
 	*/
 
 	'messages' => "Messages",
+	'messages:unreadcount' => "%s unread",
 	'messages:back' => "back to messages",
 	'messages:user' => "%s's inbox",
 	'messages:posttitle' => "%s's messages: %s",
@@ -20,6 +21,7 @@ $english = array(
 	'messages:message' => "Message",
 	'messages:title' => "Subject",
 	'messages:to' => "To",
+	'messages:to:help' => "Write recipient's username here.",
 	'messages:from' => "From",
 	'messages:fly' => "Send",
 	'messages:replying' => "Message replying to",
@@ -92,5 +94,3 @@ $english = array(
 	'messages:deleted_sender' => 'Deleted user',
 
 );
-		
-add_translation("en", $english);

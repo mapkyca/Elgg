@@ -6,6 +6,15 @@
  *
  * @package    Elgg.Core
  * @subpackage DataModel.User
+ * 
+ * @property string $name     The display name that the user will be known by in the network
+ * @property string $username The short, reference name for the user in the network
+ * @property string $email    The email address to which Elgg will send email notifications
+ * @property string $language The language preference of the user (ISO 639-1 formatted)
+ * @property string $banned   'yes' if the user is banned from the network, 'no' otherwise
+ * @property string $admin    'yes' if the user is an administrator of the network, 'no' otherwise
+ * @property string $password The hashed password of the user
+ * @property string $salt     The salt used to secure the password before hashing
  */
 class ElggUser extends ElggEntity
 	implements Friendable {
@@ -38,7 +47,7 @@ class ElggUser extends ElggEntity
 	 * Construct a new user entity, optionally from a given id value.
 	 *
 	 * @param mixed $guid If an int, load that GUID.
-	 * 	If a db row then will attempt to load the rest of the data.
+	 * 	If an entity table db row then will load the rest of the data.
 	 *
 	 * @throws Exception if there was a problem creating the user.
 	 */
@@ -49,15 +58,15 @@ class ElggUser extends ElggEntity
 		$this->initialise_attributes(false);
 
 		if (!empty($guid)) {
-			// Is $guid is a DB row - either a entity row, or a user table row.
+			// Is $guid is a DB entity row
 			if ($guid instanceof stdClass) {
 				// Load the rest
-				if (!$this->load($guid->guid)) {
+				if (!$this->load($guid)) {
 					$msg = elgg_echo('IOException:FailedToLoadGUID', array(get_class(), $guid->guid));
 					throw new IOException($msg);
 				}
 
-				// See if this is a username
+			// See if this is a username
 			} else if (is_string($guid)) {
 				$user = get_user_by_username($guid);
 				if ($user) {
@@ -66,7 +75,7 @@ class ElggUser extends ElggEntity
 					}
 				}
 
-				// Is $guid is an ElggUser? Use a copy constructor
+			// Is $guid is an ElggUser? Use a copy constructor
 			} else if ($guid instanceof ElggUser) {
 				elgg_deprecated_notice('This type of usage of the ElggUser constructor was deprecated. Please use the clone method.', 1.7);
 
@@ -74,11 +83,11 @@ class ElggUser extends ElggEntity
 					$this->attributes[$key] = $value;
 				}
 
-				// Is this is an ElggEntity but not an ElggUser = ERROR!
+			// Is this is an ElggEntity but not an ElggUser = ERROR!
 			} else if ($guid instanceof ElggEntity) {
 				throw new InvalidParameterException(elgg_echo('InvalidParameterException:NonElggUser'));
 
-				// We assume if we have got this far, $guid is an int
+			// Is it a GUID
 			} else if (is_numeric($guid)) {
 				if (!$this->load($guid)) {
 					throw new IOException(elgg_echo('IOException:FailedToLoadGUID', array(get_class(), $guid)));
@@ -90,18 +99,21 @@ class ElggUser extends ElggEntity
 	}
 
 	/**
-	 * Override the load function.
-	 * This function will ensure that all data is loaded (were possible), so
-	 * if only part of the ElggUser is loaded, it'll load the rest.
+	 * Load the ElggUser data from the database
 	 *
-	 * @param int $guid ElggUser GUID
+	 * @param mixed $guid ElggUser GUID or stdClass database row from entity table
 	 *
-	 * @return true|false
+	 * @return bool
 	 */
 	protected function load($guid) {
 		// Test to see if we have the generic stuff
 		if (!parent::load($guid)) {
 			return false;
+		}
+
+		// Only work with GUID from here
+		if ($guid instanceof stdClass) {
+			$guid = $guid->guid;
 		}
 
 		// Check the type
@@ -114,7 +126,7 @@ class ElggUser extends ElggEntity
 		$row = get_user_entity_as_row($guid);
 		if (($row) && (!$this->isFullyLoaded())) {
 			// If $row isn't a cached copy then increment the counter
-			$this->attributes['tables_loaded'] ++;
+			$this->attributes['tables_loaded']++;
 		}
 
 		// Now put these into the attributes array as core values
@@ -123,24 +135,62 @@ class ElggUser extends ElggEntity
 			$this->attributes[$key] = $value;
 		}
 
+		// guid needs to be an int  http://trac.elgg.org/ticket/4111
+		$this->attributes['guid'] = (int)$this->attributes['guid'];
+
 		return true;
 	}
 
-	/**
-	 * Saves this user to the database.
-	 *
-	 * @return true|false
-	 */
-	public function save() {
-		// Save generic stuff
-		if (!parent::save()) {
+
+	/** @override */
+	protected function create() {
+		global $CONFIG;
+	
+		$guid = parent::create();
+		$name = sanitize_string($this->name);
+		$username = sanitize_string($this->username);
+		$password = sanitize_string($this->password);
+		$salt = sanitize_string($this->salt);
+		$email = sanitize_string($this->email);
+		$language = sanitize_string($this->language);
+		$code = sanitize_string($this->code);
+
+		$query = "INSERT into {$CONFIG->dbprefix}users_entity
+			(guid, name, username, password, salt, email, language, code)
+			values ($guid, '$name', '$username', '$password', '$salt', '$email', '$language', '$code')";
+
+		$result = insert_data($query);
+		if ($result === false) {
+			// TODO(evan): Throw an exception here?
 			return false;
 		}
+		
+		return $guid;
+	}
+	
+	/** @override */
+	protected function update() {
+		global $CONFIG;
+		
+		if (!parent::update()) {
+			return false;
+		}
+		
+		$guid = (int)$this->guid;
+		$name = sanitize_string($this->name);
+		$username = sanitize_string($this->username);
+		$password = sanitize_string($this->password);
+		$salt = sanitize_string($this->salt);
+		$email = sanitize_string($this->email);
+		$language = sanitize_string($this->language);
+		$code = sanitize_string($this->code);
 
-		// Now save specific stuff
-		return create_user_entity($this->get('guid'), $this->get('name'), $this->get('username'),
-			$this->get('password'), $this->get('salt'), $this->get('email'), $this->get('language'),
-			$this->get('code'));
+		$query = "UPDATE {$CONFIG->dbprefix}users_entity
+			SET name='$name', username='$username', password='$password', salt='$salt',
+			email='$email', language='$language', code='$code'
+			WHERE guid = $guid";
+
+		return update_data($query) !== false;
 	}
 
 	/**
@@ -249,7 +299,7 @@ class ElggUser extends ElggEntity
 	 * @param int    $limit   The number of results to return
 	 * @param int    $offset  Any indexing offset
 	 *
-	 * @return bool
+	 * @return array
 	 */
 	function getSites($subtype = "", $limit = 10, $offset = 0) {
 		return get_user_sites($this->getGUID(), $subtype, $limit, $offset);
@@ -260,7 +310,7 @@ class ElggUser extends ElggEntity
 	 *
 	 * @param int $site_guid The guid of the site to add it to
 	 *
-	 * @return true|false
+	 * @return bool
 	 */
 	function addToSite($site_guid) {
 		return add_site_user($site_guid, $this->getGUID());
@@ -271,7 +321,7 @@ class ElggUser extends ElggEntity
 	 *
 	 * @param int $site_guid The guid of the site to remove it from
 	 *
-	 * @return true|false
+	 * @return bool
 	 */
 	function removeFromSite($site_guid) {
 		return remove_site_user($site_guid, $this->getGUID());
@@ -282,7 +332,7 @@ class ElggUser extends ElggEntity
 	 *
 	 * @param int $friend_guid The GUID of the user to add
 	 *
-	 * @return true|false Depending on success
+	 * @return bool
 	 */
 	function addFriend($friend_guid) {
 		return user_add_friend($this->getGUID(), $friend_guid);
@@ -293,7 +343,7 @@ class ElggUser extends ElggEntity
 	 *
 	 * @param int $friend_guid The GUID of the user to remove
 	 *
-	 * @return true|false Depending on success
+	 * @return bool
 	 */
 	function removeFriend($friend_guid) {
 		return user_remove_friend($this->getGUID(), $friend_guid);
@@ -302,8 +352,7 @@ class ElggUser extends ElggEntity
 	/**
 	 * Determines whether or not this user is a friend of the currently logged in user
 	 *
-	 *
-	 * @return true|false
+	 * @return bool
 	 */
 	function isFriend() {
 		return $this->isFriendOf(elgg_get_logged_in_user_guid());
@@ -314,7 +363,7 @@ class ElggUser extends ElggEntity
 	 *
 	 * @param int $user_guid The GUID of the user to check against
 	 *
-	 * @return true|false
+	 * @return bool
 	 */
 	function isFriendsWith($user_guid) {
 		return user_is_friend($this->getGUID(), $user_guid);
@@ -325,7 +374,7 @@ class ElggUser extends ElggEntity
 	 *
 	 * @param int $user_guid The GUID of the user to check against
 	 *
-	 * @return true|false
+	 * @return bool
 	 */
 	function isFriendOf($user_guid) {
 		return user_is_friend($user_guid, $this->getGUID());
@@ -373,7 +422,6 @@ class ElggUser extends ElggEntity
 			'relationship' => 'friend',
 			'relationship_guid' => $this->guid,
 			'limit' => $limit,
-			'offset' => get_input('offset', 0),
 			'full_view' => false,
 		);
 
@@ -447,7 +495,14 @@ class ElggUser extends ElggEntity
 	 * @return array|false
 	 */
 	public function getObjects($subtype = "", $limit = 10, $offset = 0) {
-		return get_user_objects($this->getGUID(), $subtype, $limit, $offset);
+		$params = array(
+			'type' => 'object',
+			'subtype' => $subtype,
+			'owner_guid' => $this->getGUID(),
+			'limit' => $limit,
+			'offset' => $offset
+		);
+		return elgg_get_entities($params);
 	}
 
 	/**

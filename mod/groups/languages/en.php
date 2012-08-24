@@ -5,13 +5,14 @@
  * @package ElggGroups
  */
 
-$english = array(
+return array(
 
 	/**
 	 * Menu items and titles
 	 */
 	'groups' => "Groups",
 	'groups:owned' => "Groups I own",
+	'groups:owned:user' => 'Groups %s owns',
 	'groups:yours' => "My groups",
 	'groups:user' => "%s's groups",
 	'groups:all' => "All groups",
@@ -61,6 +62,28 @@ $english = array(
 	'groups:search:tags' => "tag",
 	'groups:search:title' => "Search for groups tagged with '%s'",
 	'groups:search:none' => "No matching groups were found",
+	'groups:search_in_group' => "Search in this group",
+	'groups:acl' => "Group: %s",
+
+	'discussion:notification:topic:subject' => 'New group discussion post',
+	'groups:notification' =>
+'%s added a new discussion topic to %s:
+
+%s
+%s
+
+View and reply to the discussion:
+%s
+',
+
+	'discussion:notification:reply:body' =>
+'%s replied to the discussion topic %s in the group %s:
+
+%s
+
+View and reply to the discussion:
+%s
+',
 
 	'groups:activity' => "Group activity",
 	'groups:enableactivity' => 'Enable group activity',
@@ -261,5 +284,3 @@ or click below to view the group's join requests:
 	'groups:ecml:groupprofile' => 'Group profiles',
 
 );
-
-add_translation("en", $english);

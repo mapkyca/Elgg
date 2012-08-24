@@ -5,7 +5,7 @@
  * @package ElggLogBrowser
  */
 
-$english = array(
+return array(
 	'admin:administer_utilities:logbrowser' => 'Log browser',
 	'logbrowser' => 'Log browser',
 	'logbrowser:browse' => 'Browse system log',
@@ -17,11 +17,12 @@ $english = array(
 	'logbrowser:explore' => 'Explore log',
 
 	'logbrowser:date' => 'Date and time',
+	'logbrowser:ip_address' => 'IP address',
 	'logbrowser:user:name' => 'User',
 	'logbrowser:user:guid' => 'User GUID',
 	'logbrowser:object' => 'Object type',
 	'logbrowser:object:guid' => 'Object GUID',
 	'logbrowser:action' => 'Action',
-);
 
-add_translation("en", $english);
+	'logbrowser:no_result' => 'No results',
+);

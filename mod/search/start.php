@@ -83,15 +83,18 @@ function search_page_handler($page) {
  * @param string $query
  * @param int $min_match_context = 30
  * @param int $max_length = 300
+ * @param bool $tag_match Search is for tags. Don't ignore words.
  * @return string
  */
-function search_get_highlighted_relevant_substrings($haystack, $query, $min_match_context = 30, $max_length = 300) {
+function search_get_highlighted_relevant_substrings($haystack, $query, $min_match_context = 30, $max_length = 300, $tag_match = false) {
 
 	$haystack = strip_tags($haystack);
 	$haystack_length = elgg_strlen($haystack);
 	$haystack_lc = elgg_strtolower($haystack);
 
-	$words = search_remove_ignored_words($query, 'array');
+	if (!$tag_match) {
+		$words = search_remove_ignored_words($query, 'array');
+	}
 
 	// if haystack < $max_length return the entire haystack w/formatting immediately
 	if ($haystack_length <= $max_length) {
@@ -107,6 +110,7 @@ function search_get_highlighted_relevant_substrings($haystack, $query, $min_matc
 		$word = elgg_strtolower($word);
 		$count = elgg_substr_count($haystack_lc, $word);
 		$word_len = elgg_strlen($word);
+		$haystack_len = elgg_strlen($haystack_lc);
 
 		// find the start positions for the words
 		if ($count > 1) {
@@ -117,6 +121,10 @@ function search_get_highlighted_relevant_substrings($haystack, $query, $min_matc
 				$stop = $pos + $word_len + $min_match_context;
 				$lengths[] = $stop - $start;
 				$offset += $pos + $word_len;
+
+				if ($offset >= $haystack_len) {
+					break;
+				}
 			}
 		} else {
 			$pos = elgg_strpos($haystack_lc, $word);
